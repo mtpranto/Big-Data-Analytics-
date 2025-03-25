@@ -1,0 +1,178 @@
+#Language : Java
+10 million elements
+Sequential Merge Sort implementation
+Parallel Merge Sort implementation with thread counting
+
+
+import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
+
+public class SortingExperiment {
+    // Step 1: Generate random data
+    public static long[] generateRandomData(int size) {
+        Random random = new Random();
+        long[] data = new long[size];
+        for (int i = 0; i < size; i++) {
+            data[i] = random.nextLong(); // 64-bit random integers
+        }
+        return data;
+    }
+
+    // Step 2: Sequential Merge Sort implementation
+    public static void mergeSort(long[] array, int left, int right) {
+        if (left < right) {
+            int mid = left + (right - left) / 2;
+            mergeSort(array, left, mid);        // Sort left half
+            mergeSort(array, mid + 1, right);   // Sort right half
+            merge(array, left, mid, right);     // Merge the halves
+        }
+    }
+
+    public static void merge(long[] array, int left, int mid, int right) {
+        int n1 = mid - left + 1;
+        int n2 = right - mid;
+        long[] leftArray = new long[n1];
+        long[] rightArray = new long[n2];
+
+        // Copy data to temporary arrays
+        for (int i = 0; i < n1; i++) {
+            leftArray[i] = array[left + i];
+        }
+        for (int j = 0; j < n2; j++) {
+            rightArray[j] = array[mid + 1 + j];
+        }
+
+        // Merge the temporary arrays back into the original array
+        int i = 0, j = 0, k = left;
+        while (i < n1 && j < n2) {
+            if (leftArray[i] <= rightArray[j]) {
+                array[k++] = leftArray[i++];
+            } else {
+                array[k++] = rightArray[j++];
+            }
+        }
+
+        // Copy remaining elements of leftArray, if any
+        while (i < n1) {
+            array[k++] = leftArray[i++];
+        }
+
+        // Copy remaining elements of rightArray, if any
+        while (j < n2) {
+            array[k++] = rightArray[j++];
+        }
+    }
+
+    // Step 3 & 4: Parallel Merge Sort implementation with thread counting
+    static class MergeSortThread extends Thread {
+        private long[] array;
+        private int left;
+        private int right;
+        private int threshold; // Threshold is now a parameter
+        private static AtomicInteger threadCount = new AtomicInteger(0); // Thread counter
+
+        public MergeSortThread(long[] array, int left, int right, int threshold) {
+            this.array = array;
+            this.left = left;
+            this.right = right;
+            this.threshold = threshold;
+            threadCount.incrementAndGet(); // Increment thread count
+        }
+
+        public static void resetThreadCount() {
+            threadCount.set(0); // Reset thread count before each run
+        }
+
+        public static int getThreadCount() {
+            return threadCount.get(); // Get the total number of threads created
+        }
+
+        @Override
+        public void run() {
+            parallelMergeSort(array, left, right);
+        }
+
+        private void parallelMergeSort(long[] array, int left, int right) {
+            if (left < right) {
+                int mid = left + (right - left) / 2;
+
+                // If the subarray is small, use sequential merge sort
+                if (right - left <= threshold) {
+                    mergeSort(array, left, right);
+                } else {
+                    // Create threads for left and right halves
+                    MergeSortThread leftThread = new MergeSortThread(array, left, mid, threshold);
+                    MergeSortThread rightThread = new MergeSortThread(array, mid + 1, right, threshold);
+
+                    // Start the threads
+                    leftThread.start();
+                    rightThread.start();
+
+                    // Wait for both threads to finish
+                    try {
+                        leftThread.join();
+                        rightThread.join();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+
+                    // Merge the sorted halves
+                    merge(array, left, mid, right);
+                }
+            }
+        }
+    }
+
+    // Method to initiate parallel sorting with a specific threshold
+    public static void parallelMergeSort(long[] array, int threshold) {
+        MergeSortThread.resetThreadCount(); // Reset thread count
+        MergeSortThread sorter = new MergeSortThread(array, 0, array.length - 1, threshold);
+        sorter.start();
+        try {
+            sorter.join(); // Wait for the sorting to complete
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Helper method to verify if the array is sorted
+    public static boolean isSorted(long[] array) {
+        for (int i = 1; i < array.length; i++) {
+            if (array[i] < array[i - 1]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static void main(String[] args) {
+        int size = 10_000_000; // 10 million elements
+        int[] thresholds = {10_000, 50_000, 100_000, 500_000, 1_000_000}; // Different thresholds to test
+
+        // Step 1: Generate random data
+        long[] dataSequential = generateRandomData(size);
+        System.out.println("Random data generated: " + size + " elements");
+
+        // Step 2: Measure sequential sorting time
+        long startTime = System.nanoTime();
+        mergeSort(dataSequential, 0, dataSequential.length - 1);
+        long endTime = System.nanoTime();
+        double sequentialTime = (endTime - startTime) / 1_000_000_000.0; // Convert to seconds
+        System.out.printf("Sequential Merge Sort time: %.3f seconds%n", sequentialTime);
+        System.out.println("Sequential sort correct: " + isSorted(dataSequential));
+
+        // Step 4: Measure parallel sorting time for different thresholds
+        System.out.println("\nTesting parallel Merge Sort with different thresholds:");
+        System.out.println("--------------------------------------------------");
+        for (int threshold : thresholds) {
+            long[] dataParallel = dataSequential.clone(); // Create a fresh copy for parallel sorting
+            startTime = System.nanoTime();
+            parallelMergeSort(dataParallel, threshold);
+            endTime = System.nanoTime();
+            double parallelTime = (endTime - startTime) / 1_000_000_000.0; // Convert to seconds
+            int threadCount = MergeSortThread.getThreadCount();
+            System.out.printf("Threshold: %d, Threads: %d, Time: %.3f seconds, Correct: %b%n",
+                    threshold, threadCount, parallelTime, isSorted(dataParallel));
+        }
+    }
+}
